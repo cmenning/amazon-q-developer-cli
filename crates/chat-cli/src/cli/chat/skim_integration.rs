@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::io::{
     BufReader,
     Cursor,
@@ -5,7 +6,9 @@ use std::io::{
     stdout,
 };
 
+#[cfg(unix)]
 use crossterm::execute;
+#[cfg(unix)]
 use crossterm::terminal::{
     EnterAlternateScreen,
     LeaveAlternateScreen,
@@ -20,18 +23,30 @@ use rustyline::{
     EventContext,
     RepeatCount,
 };
+#[cfg(unix)]
 use skim::prelude::*;
+#[cfg(unix)]
 use tempfile::NamedTempFile;
 
 use super::context::ContextManager;
 use crate::os::Os;
+use std::sync::Arc;
 
+#[cfg(unix)]
 pub struct SkimCommandSelector {
     os: Os,
     context_manager: Arc<ContextManager>,
     tool_names: Vec<String>,
 }
 
+#[cfg(windows)]
+pub struct SkimCommandSelector {
+    _os: Os,
+    _context_manager: Arc<ContextManager>,
+    _tool_names: Vec<String>,
+}
+
+#[cfg(unix)]
 impl SkimCommandSelector {
     /// This allows the ConditionalEventHandler handle function to be bound to a KeyEvent.
     pub fn new(os: Os, context_manager: Arc<ContextManager>, tool_names: Vec<String>) -> Self {
@@ -43,8 +58,20 @@ impl SkimCommandSelector {
     }
 }
 
+#[cfg(windows)]
+impl SkimCommandSelector {
+    pub fn new(os: Os, context_manager: Arc<ContextManager>, tool_names: Vec<String>) -> Self {
+        Self {
+            _os: os,
+            _context_manager: context_manager,
+            _tool_names: tool_names,
+        }
+    }
+}
+
+#[cfg(unix)]
 impl ConditionalEventHandler for SkimCommandSelector {
-    fn handle(&self, _evt: &rustyline::Event, _n: RepeatCount, _positive: bool, _os: &EventContext<'_>) -> Option<Cmd> {
+    fn handle(&self, _evt: &rustyline::Event, _n: RepeatCount, _positive: bool, _ctx: &EventContext<'_>) -> Option<Cmd> {
         // Launch skim command selector with the context manager if available
         match select_command(&self.os, self.context_manager.as_ref(), &self.tool_names) {
             Ok(Some(command)) => Some(Cmd::Insert(1, command)),
@@ -56,6 +83,13 @@ impl ConditionalEventHandler for SkimCommandSelector {
     }
 }
 
+#[cfg(windows)]
+impl ConditionalEventHandler for SkimCommandSelector {
+    fn handle(&self, _evt: &rustyline::Event, _n: RepeatCount, _positive: bool, _ctx: &EventContext<'_>) -> Option<Cmd> {
+        Some(Cmd::Noop)
+    }
+}
+
 pub fn get_available_commands(os: &Os) -> Vec<String> {
     // Use the experiment-aware function from prompt.rs
     super::prompt::get_available_commands(os)
@@ -64,8 +98,7 @@ pub fn get_available_commands(os: &Os) -> Vec<String> {
         .collect()
 }
 
-/// Format commands for skim display
-/// Create a standard set of skim options with consistent styling
+#[cfg(unix)]
 fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
     SkimOptionsBuilder::default()
         .height("100%".to_string())
@@ -76,8 +109,7 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
 }
 
-/// Run skim with the given options and items in an alternate screen
-/// This helper function handles entering/exiting the alternate screen and running skim
+#[cfg(unix)]
 fn run_skim_with_options(options: &SkimOptions, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
     // Enter alternate screen to prevent skim output from persisting in terminal history
     execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
@@ -90,12 +122,12 @@ fn run_skim_with_options(options: &SkimOptions, items: SkimItemReceiver) -> Resu
     Ok(selected_items)
 }
 
-/// Extract string selections from skim items
+#[cfg(unix)]
 fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
     items.iter().map(|item| item.output().to_string()).collect()
 }
 
-/// Launch skim with the given items and return the selected item
+#[cfg(unix)]
 pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
     let mut temp_file_for_skim_input = NamedTempFile::new()?;
     temp_file_for_skim_input.write_all(items.join("\n").as_bytes())?;
@@ -114,7 +146,7 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
     }
 }
 
-/// Select files using skim
+#[cfg(unix)]
 pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     // Create skim options with appropriate settings
     let options = create_skim_options("Select files: ", true)?;
@@ -154,7 +186,7 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
-/// Select context paths using skim
+#[cfg(unix)]
 pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Result<Option<(Vec<String>, bool)>> {
     let mut all_paths = Vec::new();
 
@@ -206,7 +238,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
     }
 }
 
-/// Launch the command selector and handle the selected command
+#[cfg(unix)]
 pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
     let commands = get_available_commands(os);
 
@@ -284,6 +316,7 @@ pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String
     }
 }
 
+#[cfg(unix)]
 #[derive(PartialEq)]
 enum CommandType {
     ContextAdd(String),
@@ -292,6 +325,7 @@ enum CommandType {
     Agent(&'static str),
 }
 
+#[cfg(unix)]
 impl CommandType {
     fn needs_agent_selection(&self) -> bool {
         matches!(self, CommandType::Agent("set" | "delete" | "rename"))
@@ -313,6 +347,161 @@ impl CommandType {
                 _ => None,
             }
         }
+    }
+}
+
+#[cfg(windows)]
+pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
+    use dialoguer::FuzzySelect;
+    use dialoguer::MultiSelect;
+
+    if items.is_empty() {
+        return Ok(None);
+    }
+
+    if multi {
+        let selections = MultiSelect::new()
+            .with_prompt(prompt)
+            .items(items)
+            .interact_opt()?;
+        
+        Ok(selections.map(|indices| indices.iter().map(|&i| items[i].clone()).collect()))
+    } else {
+        let selection = FuzzySelect::new()
+            .with_prompt(prompt)
+            .items(items)
+            .interact_opt()?;
+        
+        Ok(selection.map(|i| vec![items[i].clone()]))
+    }
+}
+
+#[cfg(windows)]
+pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
+    use dialoguer::MultiSelect;
+    use walkdir::WalkDir;
+
+    let files: Vec<String> = WalkDir::new(".")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| !e.path().to_string_lossy().contains("\\."))
+        .map(|e| e.path().display().to_string())
+        .collect();
+
+    if files.is_empty() {
+        return Ok(None);
+    }
+
+    let selections = MultiSelect::new()
+        .with_prompt("Select files: ")
+        .items(&files)
+        .interact_opt()?;
+    
+    Ok(selections.map(|indices| indices.iter().map(|&i| files[i].clone()).collect()))
+}
+
+#[cfg(windows)]
+pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Result<Option<(Vec<String>, bool)>> {
+    use dialoguer::MultiSelect;
+
+    let mut all_paths = Vec::new();
+
+    for path in &context_manager.paths {
+        all_paths.push(format!(
+            "(agent: {}) {}",
+            context_manager.current_profile,
+            path.get_path_as_str()
+        ));
+    }
+
+    if all_paths.is_empty() {
+        return Ok(None);
+    }
+
+    let selections = MultiSelect::new()
+        .with_prompt("Select paths to remove: ")
+        .items(&all_paths)
+        .interact_opt()?;
+
+    match selections {
+        Some(indices) if !indices.is_empty() => {
+            let selected_paths: Vec<String> = indices.iter().map(|&i| all_paths[i].clone()).collect();
+            let has_global = selected_paths.iter().any(|p| p.starts_with("(global)"));
+            
+            let paths: Vec<String> = selected_paths
+                .iter()
+                .map(|p| {
+                    let parts: Vec<&str> = p.splitn(2, ") ").collect();
+                    if parts.len() > 1 {
+                        parts[1].to_string()
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect();
+
+            Ok(Some((paths, has_global)))
+        },
+        _ => Ok(None),
+    }
+}
+
+#[cfg(windows)]
+pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
+    use dialoguer::FuzzySelect;
+
+    let commands = get_available_commands(os);
+
+    let selection = FuzzySelect::new()
+        .with_prompt("Select command: ")
+        .items(&commands)
+        .interact_opt()?;
+
+    match selection {
+        Some(idx) => {
+            let selected_command = &commands[idx];
+
+            if selected_command.starts_with("/context add") {
+                match select_files_with_skim()? {
+                    Some(files) if !files.is_empty() => {
+                        let mut cmd = selected_command.clone();
+                        for file in files {
+                            cmd.push_str(&format!(" {}", file));
+                        }
+                        Ok(Some(cmd))
+                    },
+                    _ => Ok(Some(selected_command.clone())),
+                }
+            } else if selected_command.starts_with("/context rm") {
+                match select_context_paths_with_skim(context_manager)? {
+                    Some((paths, has_global)) if !paths.is_empty() => {
+                        let mut full_cmd = selected_command.clone();
+                        if has_global {
+                            full_cmd.push_str(" --global");
+                        }
+                        for path in paths {
+                            full_cmd.push_str(&format!(" {}", path));
+                        }
+                        Ok(Some(full_cmd))
+                    },
+                    _ => Ok(Some(selected_command.clone())),
+                }
+            } else if selected_command.starts_with("/tools") {
+                let tool_selection = FuzzySelect::new()
+                    .with_prompt("Select tool: ")
+                    .items(tools)
+                    .interact_opt()?;
+                
+                match tool_selection {
+                    Some(tool_idx) => Ok(Some(format!("{} {}", selected_command, tools[tool_idx]))),
+                    None => Ok(Some(selected_command.clone())),
+                }
+            } else {
+                Ok(Some(selected_command.clone()))
+            }
+        },
+        None => Ok(None),
     }
 }
 
